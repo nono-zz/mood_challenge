@@ -8,7 +8,7 @@ import numpy as np
 import random
 import os
 from torch.utils.data import DataLoader
-from model import Modified3DUNet
+from model import Modified3DUNet, DiscriminativeSubNetwork
 
 from data_loader import TrainDataset, TestDataset
 
@@ -29,12 +29,18 @@ def setup_seed(seed):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-def train(_class_):
-    print(_class_)
+def train():
     epochs = 200
     learning_rate = 0.005
-    batch_size = 16
+    batch_size = 1
     image_size = 256
+    task = 'brain'
+    if task == 'brain':
+        channels = 256
+    else:
+        channels = 512
+        
+    n_classes = 2
         
     device = 'cuda:1' if torch.cuda.is_available() else 'cpu'
     print(device)
@@ -45,18 +51,21 @@ def train(_class_):
     train_dataloader = torch.utils.data.DataLoader(train_data, batch_size=batch_size, shuffle=True)         # learn how torch.utils.data.DataLoader functions
     # test_dataloader = torch.utils.data.DataLoader(test_data, batch_size=1, shuffle=False)
 
-    model = model()
+    # model = Modified3DUNet(channels, n_classes)
+    model = DiscriminativeSubNetwork(in_channels=channels, out_channels=channels, base_channels=4)
     model.to(device)
 
-    optimizer = torch.optim.Adam(list(model), lr=learning_rate, betas=(0.5,0.999))
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, betas=(0.5,0.999))
 
 
     for epoch in range(epochs):
         model.train()
         loss_list = []
-        for aug, img in train_dataloader:         # where does the label come from? torch.Size([16]) why is it 16?
+        # for aug, img in train_dataloader:         # where does the label come from? torch.Size([16]) why is it 16?
+        for img in train_dataloader:
             img = img.to(device)
-            outputs = model(aug)
+            # outputs = model(aug)
+            outputs = model(img)
             
             loss = (img, outputs)
             optimizer.zero_grad()
@@ -76,8 +85,5 @@ def train(_class_):
 if __name__ == '__main__':
 
     setup_seed(111)
-    item_list = ['carpet', 'bottle', 'hazelnut', 'leather', 'cable', 'capsule', 'grid', 'pill',
-                 'transistor', 'metal_nut', 'screw','toothbrush', 'zipper', 'tile', 'wood']
-    for i in item_list:
-        train(i)
+    train()
 

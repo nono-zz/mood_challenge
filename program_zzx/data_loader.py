@@ -89,7 +89,7 @@ class TrainDataset(Dataset):
         self.resize_shape=size
 
         self.img_dir = os.path.join(root_dir, mode)
-        self.image_paths = sorted(glob.glob(root_dir+"/train"+"/*.nii.gz"))
+        self.image_paths = sorted(glob.glob(self.img_dir+"/train"+"/*.nii.gz"))
         
         if anomaly_source_path:
             self.anomaly_source_paths = sorted(glob.glob(anomaly_source_path+"/*/*.jpg"))
@@ -109,6 +109,7 @@ class TrainDataset(Dataset):
         self.rot = iaa.Sequential([iaa.Affine(rotate=(-90, 90))])
         
         self.transform =  transforms.Compose([
+                                            # transforms.ToPILImage(),
                                             transforms.Resize((size, size)),
                                             transforms.ToTensor()])
         
@@ -213,8 +214,15 @@ class TrainDataset(Dataset):
         img_path = self.image_paths[idx]
         nimg = nib.load(img_path)
         nimg_array = nimg.get_fdata()           # 3d image
-        nimg_tensor = self.transform(nimg_array)
+        img_list = []
+        for i in range(nimg_array.shape[2]):
+            # slice =  np.expand_dims(nimg_array[:,:,i], axis=0)
+            slice = nimg_array[:,:,i]
+            nimg_tensor = self.transform(slice)
+            img_list.append(nimg_tensor)
+        img_tensor = torch.tensor(img_list)
+        
         
         
 
-        return nimg_tensor
+        return img_tensor
