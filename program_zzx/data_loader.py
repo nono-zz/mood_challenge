@@ -1,3 +1,4 @@
+from ctypes import sizeof
 import os
 import numpy as np
 from torch.utils.data import Dataset
@@ -10,6 +11,7 @@ import torch.nn.functional as F
 import torchvision.transforms as transforms
 import nibabel as nib
 import torch.nn
+import random
 # from perlin import rand_perlin_2d_np
 
 import torchio as tio
@@ -78,7 +80,7 @@ class TestDataset(Dataset):
 
 class TrainDataset(Dataset):
 
-    def __init__(self, root_dir, mode='brain', anomaly_source_path=None, size=None):
+    def __init__(self, root_dir, mode='brain', anomaly_source_path=None, size=None, augumentation=None):
         """
         Args:
             root_dir (string): Directory with all the images.
@@ -87,6 +89,10 @@ class TrainDataset(Dataset):
         """
         self.root_dir = root_dir
         self.resize_shape=size
+        self.augumentation=augumentation
+        self.dispatcher = {'gaussianSeperate': self.gaussianSeperate,
+                           'gaussianUnified': self.gaussianUnified,
+                           'Circle': self.Circle_Aug}
 
         self.img_dir = os.path.join(root_dir, mode)
         self.image_paths = sorted(glob.glob(self.img_dir+"/train"+"/*.nii.gz"))
@@ -109,7 +115,7 @@ class TrainDataset(Dataset):
         self.rot = iaa.Sequential([iaa.Affine(rotate=(-90, 90))])
         
         self.transform =  transforms.Compose([
-                                            # transforms.ToPILImage(),
+                                            transforms.ToPILImage(),
                                             transforms.Resize((size, size)),
                                             transforms.ToTensor()])
         
@@ -162,24 +168,56 @@ class TrainDataset(Dataset):
             if np.sum(msk) == 0:
                 has_anomaly=0.0
             return augmented_image, msk, np.array([has_anomaly],dtype=np.float32)
-        
-        
-    def Noise_Aug(x, noise_res, noise_std):
     
-        ns = torch.normal(mean=torch.zeros(x.shape[0], x.shape[1], noise_res, noise_res), std=noise_std).to(x.device)
+    def gaussianSeperate(self, x, noise_res=16, noise_std=0.2):
+        
+        ns = torch.normal(mean=torch.zeros(x.shape[0], noise_res, noise_res), std=noise_std).to(x.device)
 
-        ns = F.upsample_bilinear(ns, size=[128, 128])
+        ns = F.upsample_bilinear(ns, size=[x.shape[1], x.shape[2]])
 
         # Roll to randomly translate the generated noise.
-        roll_x = random.choice(range(128))
-        roll_y = random.choice(range(128))
+        roll_x = random.choice(range(x.shape[1]))
+        roll_y = random.choice(range(x.shape[2]))
         ns = torch.roll(ns, shifts=[roll_x, roll_y], dims=[-2, -1])
 
-        mask = x.sum(dim=1, keepdim=True) > 0.01
+        # mask = x.sum(dim=1, keepdim=True) > 0.01
+        mask = x > 0.01
         ns *= mask # Only apply the noise in the foreground.
         res = x + ns
 
-        return res
+        return res  
+        
+    def gaussianUnified(self, x, noise_res=16, noise_std=0.2):
+            
+        ns = torch.normal(mean=torch.zeros(1, 1, noise_res, noise_res), std=noise_std).to(x.device)
+
+        ns = F.upsample_bilinear(ns, size=[x.shape[1], x.shape[2]])
+
+        # Roll to randomly translate the generated noise.
+        roll_x = random.choice(range(x.shape[1]))
+        roll_y = random.choice(range(x.shape[2]))
+        ns = torch.roll(ns, shifts=[roll_x, roll_y], dims=[-2, -1])
+        
+        
+        size_to_slice = random.randint(2, x.shape[0])
+        startID = random.randint(0, x.shape[0]-size_to_slice)
+        Coef_ascend = np.arange(0,1,1 / ((size_to_slice)//2))
+        Coef_descend = np.arange(1,0, -1 / (size_to_slice - size_to_slice//2))
+        Coefs = np.zeros(x.shape[0])
+        Coefs[startID:startID + size_to_slice//2] = Coef_ascend[:size_to_slice//2]
+        Coefs[startID + size_to_slice//2 : size_to_slice + startID] = Coef_descend[:size_to_slice - size_to_slice//2]
+        Coefs = Coefs.reshape(-1, 1, 1)           # [256, 1, 1]
+        
+        # stack the ns for x.shape[0] times
+        ns = torch.squeeze(ns, dim=0)
+        ns = ns.repeat(x.shape[0], 1, 1)
+
+        # mask = x.sum(dim=1, keepdim=True) > 0.01
+        mask = x > 0.01
+        ns *= mask # Only apply the noise in the foreground.
+        res = x + ns * Coefs
+
+        return res  
     
     def Circle_Aug(x):
         from skimage import draw
@@ -189,7 +227,7 @@ class TrainDataset(Dataset):
         
         
 
-    def transform_image(self, image_path, anomaly_source_path):
+    def DRAEM_transform(self, image_path, anomaly_source_path):
         image = cv2.imread(image_path)
         image = cv2.resize(image, dsize=(self.resize_shape[1], self.resize_shape[0]))
 
@@ -218,11 +256,16 @@ class TrainDataset(Dataset):
         for i in range(nimg_array.shape[2]):
             # slice =  np.expand_dims(nimg_array[:,:,i], axis=0)
             slice = nimg_array[:,:,i]
-            nimg_tensor = self.transform(slice)
+            # nimg_tensor = self.transform(slice)
+            nimg_tensor = torch.tensor(slice)
+            nimg_tensor = torch.unsqueeze(nimg_tensor, dim = 0)
             img_list.append(nimg_tensor)
-        img_tensor = torch.tensor(img_list)
+        # img_tensor = torch.tensor(img_list)
+        img_tensor = torch.cat(img_list, dim = 0)
+        img_tensor = img_tensor.float()             # torch.tensor([256, 256, 256])
         
-        
+        aug_tensor = self.dispatcher[self.augumentation](img_tensor)
+        aug_tensor = aug_tensor.float()
         
 
-        return img_tensor
+        return img_tensor, aug_tensor
