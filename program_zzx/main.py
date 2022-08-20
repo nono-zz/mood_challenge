@@ -88,12 +88,14 @@ def train():
                 outputs = model(x)
                 # samplePred = outputs[0]
                 # pixelPred = outputs[1][:,0,:,:,:]
-                pixelPred = outputs
+                pixelPred = outputs[:,0,:,:,:]
                 
                 loss1 = lossMSE(img, pixelPred)
-                loss2 = torch.mean(1- lossCos(img,pixelPred))
-                loss = loss1+loss2
-                # loss = loss1
+                # loss2 = torch.mean(1 - lossCos(img,pixelPred))
+                # loss2 = torch.mean(1 - lossCos(img,pixelPred))
+                
+                # loss = loss1+loss2
+                loss = loss1
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
@@ -113,7 +115,7 @@ def train():
             visualizer.visualize_image_batch(pixelPred[0,200], epoch, image_name='out_200')    
             
             if (epoch + 1) % 10 == 0:
-                pixelAP, sampleAP = evaluation(args, epoch, device, model, test_dataloader)
+                pixelAP, sampleAP = evaluation3D(args, epoch, device, model, test_dataloader)
                 print('Pixel Average Precision:{:.4f}, Sample Average Precision:{:.4f}'.format(pixelAP, sampleAP))
                 torch.save({'model': model.state_dict()}, ckp_path)
 
@@ -159,6 +161,9 @@ def train():
             visualizer.visualize_image_batch(outputs[0,50], epoch, image_name='out_50')
             visualizer.visualize_image_batch(outputs[0,125], epoch, image_name='out_125')
             visualizer.visualize_image_batch(outputs[0,200], epoch, image_name='out_200')    
+            
+            
+            
                 
                 
                 

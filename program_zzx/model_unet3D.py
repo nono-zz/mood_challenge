@@ -54,6 +54,8 @@ class Abstract3DUNet(nn.Module):
         # in the last layer a 1×1 convolution reduces the number of output
         # channels to the number of labels
         self.final_conv = nn.Conv3d(f_maps[0], out_channels, 1)
+        # self.final_norm = nn.BatchNorm3d(out_channels)
+        # self.
 
         if is_segmentation:
             # semantic segmentation problem
