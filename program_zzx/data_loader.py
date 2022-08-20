@@ -205,11 +205,11 @@ class TestDataset(Dataset):
         img_tensor = torch.cat(img_list, dim = 0)
         img_tensor = img_tensor.float()             # torch.tensor([256, 256, 256])
         
-        aug_tensor = self.dispatcher[self.augumentation](img_tensor)
-        aug_tensor = aug_tensor.float()
+        # aug_tensor = self.dispatcher[self.augumentation](img_tensor)
+        # aug_tensor = aug_tensor.float()
         
 
-        return img_tensor, aug_tensor
+        return (img_tensor, img_path)
 
 
 

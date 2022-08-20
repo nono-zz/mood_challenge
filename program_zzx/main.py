@@ -61,7 +61,7 @@ def train():
     test_dataloader = torch.utils.data.DataLoader(test_data, batch_size=batch_size, shuffle=False)
 
     if args.backbone == '3D':
-        model = Modified3DUNet(1, n_classes)
+        model = Modified3DUNet(1, n_classes, base_n_filter=4)
     elif args.backbone == '2D':
         model = DiscriminativeSubNetwork(in_channels=1, out_channels=1)
     model.to(device)
@@ -74,7 +74,7 @@ def train():
     if args.backbone == '3D':
 
         for epoch in range(epochs):
-            pixelAP, sampleAP = evaluation(args, epoch, device, model, test_dataloader)s
+            pixelAP, sampleAP = evaluation(args, epoch, device, model, test_dataloader, visualizer)
             model.train()
             loss_list = []
             for img, aug in train_dataloader:         # where does the label come from? torch.Size([16]) why is it 16?
