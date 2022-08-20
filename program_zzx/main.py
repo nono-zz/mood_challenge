@@ -19,6 +19,8 @@ from torch.nn import functional as F
 
 from tensorboard_visualizer import TensorboardVisualizer
 
+from test import evaluation
+
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
@@ -45,6 +47,7 @@ def train():
     log_dir = '/home/zhaoxiang/log'
     
     visualizer = TensorboardVisualizer(log_dir=os.path.join(log_dir, args.backbone))
+    ckp_path = os.path.join('/home/zhaoxiang/checkpoints', args.backbone)
         
     n_classes = 2
         
@@ -53,9 +56,9 @@ def train():
     data_path = args.data_path
     
     train_data = TrainDataset(root_dir=data_path, size=256, augumentation=args.augumentation)             # what does the ImageFolder stands for?
-    # test_data = TestDataset(root=main_path, size=256, gt_transform=gt_transform, phase="test")
+    test_data = TestDataset(root_dir=data_path, size=256, augumentation=args.augumentation)
     train_dataloader = torch.utils.data.DataLoader(train_data, batch_size=batch_size, shuffle=False)         # learn how torch.utils.data.DataLoader functions
-    # test_dataloader = torch.utils.data.DataLoader(test_data, batch_size=1, shuffle=False)
+    test_dataloader = torch.utils.data.DataLoader(test_data, batch_size=batch_size, shuffle=False)
 
     if args.backbone == '3D':
         model = Modified3DUNet(1, n_classes)
@@ -71,6 +74,7 @@ def train():
     if args.backbone == '3D':
 
         for epoch in range(epochs):
+            pixelAP, sampleAP = evaluation(args, epoch, device, model, test_dataloader)s
             model.train()
             loss_list = []
             for img, aug in train_dataloader:         # where does the label come from? torch.Size([16]) why is it 16?
@@ -175,11 +179,10 @@ def train():
                 # loss_list.append(loss.item())
         
         
-        # if (epoch + 1) % 10 == 0:
-        #     auroc_px, auroc_sp, aupro_px = evaluation(encoder, bn, decoder, test_dataloader, device)
-        #     ap = evaluation(model, train_dataloader, device)
-        #     print('Average Precision:{:.3f}'.format(ap))
-        #     torch.save({'model': model.state_dict()}, ckp_path)
+        if (epoch + 1) % 10 == 0:
+            pixelAP, sampleAP = evaluation(args, epoch, device, model, test_dataloader)
+            print('Pixel Average Precision:{:.4f}, Sample Average Precision:{:.4f}'.format(pixelAP, sampleAP))
+            torch.save({'model': model.state_dict()}, ckp_path)
 
 
 
