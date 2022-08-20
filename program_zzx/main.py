@@ -9,6 +9,7 @@ import random
 import os
 from torch.utils.data import DataLoader
 from model import Modified3DUNet, DiscriminativeSubNetwork
+from model_unet3D import UNet3D
 
 from data_loader import TrainDataset, TestDataset
 
@@ -61,7 +62,8 @@ def train():
     test_dataloader = torch.utils.data.DataLoader(test_data, batch_size=batch_size, shuffle=False)
 
     if args.backbone == '3D':
-        model = Modified3DUNet(1, n_classes, base_n_filter=4)
+        # model = Modified3DUNet(1, n_classes, base_n_filter=4)
+        model = UNet3D(1, 1, f_maps=16)
     elif args.backbone == '2D':
         model = DiscriminativeSubNetwork(in_channels=1, out_channels=1)
     model.to(device)
@@ -74,7 +76,7 @@ def train():
     if args.backbone == '3D':
 
         for epoch in range(epochs):
-            pixelAP, sampleAP = evaluation(args, epoch, device, model, test_dataloader, visualizer)
+            # pixelAP, sampleAP = evaluation(args, epoch, device, model, test_dataloader, visualizer)
             model.train()
             loss_list = []
             for img, aug in train_dataloader:         # where does the label come from? torch.Size([16]) why is it 16?
@@ -84,10 +86,9 @@ def train():
                 
                 x = torch.unsqueeze(img, dim=1)
                 outputs = model(x)
-                samplePred = outputs[0]
-                pixelPred = outputs[1][:,0,:,:,:]
-                # outputs = model(aug)
-                # outputs = model(img)
+                # samplePred = outputs[0]
+                # pixelPred = outputs[1][:,0,:,:,:]
+                pixelPred = outputs
                 
                 loss1 = lossMSE(img, pixelPred)
                 loss2 = torch.mean(1- lossCos(img,pixelPred))
@@ -110,6 +111,12 @@ def train():
             visualizer.visualize_image_batch(pixelPred[0,50], epoch, image_name='out_50')
             visualizer.visualize_image_batch(pixelPred[0,125], epoch, image_name='out_125')
             visualizer.visualize_image_batch(pixelPred[0,200], epoch, image_name='out_200')    
+            
+            if (epoch + 1) % 10 == 0:
+                pixelAP, sampleAP = evaluation(args, epoch, device, model, test_dataloader)
+                print('Pixel Average Precision:{:.4f}, Sample Average Precision:{:.4f}'.format(pixelAP, sampleAP))
+                torch.save({'model': model.state_dict()}, ckp_path)
+
             
     elif args.backbone == '2D':
         
@@ -179,11 +186,7 @@ def train():
                 # loss_list.append(loss.item())
         
         
-        if (epoch + 1) % 10 == 0:
-            pixelAP, sampleAP = evaluation(args, epoch, device, model, test_dataloader)
-            print('Pixel Average Precision:{:.4f}, Sample Average Precision:{:.4f}'.format(pixelAP, sampleAP))
-            torch.save({'model': model.state_dict()}, ckp_path)
-
+     
 
 
 
