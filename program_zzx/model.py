@@ -379,11 +379,13 @@ class DecoderDiscriminative(nn.Module):
 if __name__ == '__main__':
     import torch
     # x = torch.ones([1, 1, 256,256,256])
-    x = torch.ones([1, 256, 256, 256])
+    x = torch.ones([1, 1, 256,256,256])
+    
+    # x = torch.ones([1, 256, 256, 256])
     channels = x.shape[1]
-    # n_classes = 2 
-    # model = Modified3DUNet(channels, n_classes)
-    model = DiscriminativeSubNetwork(in_channels=channels, out_channels=channels, base_channels=channels*4)
+    n_classes = 2 
+    model = Modified3DUNet(channels, n_classes)
+    # model = DiscriminativeSubNetwork(in_channels=channels, out_channels=channels, base_channels=channels*4)
     
     y = model(x)
     print('done')

@@ -17,6 +17,8 @@ import argparse
 # from test import evaluation, visualization, test
 from torch.nn import functional as F
 
+from tensorboard_visualizer import TensorboardVisualizer
+
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
@@ -40,6 +42,10 @@ def train():
     else:
         channels = 512
         
+    log_dir = '/home/zhaoxiang/log'
+    
+    visualizer = TensorboardVisualizer(log_dir=os.path.join(log_dir, args.backbone))
+        
     n_classes = 2
         
     device = 'cuda:{}'.format(args.gpu_id) if torch.cuda.is_available() else 'cpu'
@@ -51,37 +57,122 @@ def train():
     train_dataloader = torch.utils.data.DataLoader(train_data, batch_size=batch_size, shuffle=False)         # learn how torch.utils.data.DataLoader functions
     # test_dataloader = torch.utils.data.DataLoader(test_data, batch_size=1, shuffle=False)
 
-    # model = Modified3DUNet(channels, n_classes)
-    model = DiscriminativeSubNetwork(in_channels=channels, out_channels=channels, base_channels=4)
+    if args.backbone == '3D':
+        model = Modified3DUNet(1, n_classes)
+    elif args.backbone == '2D':
+        model = DiscriminativeSubNetwork(in_channels=1, out_channels=1)
     model.to(device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, betas=(0.5,0.999))
-    lossFN = torch.nn.MSELoss()
+    lossMSE = torch.nn.MSELoss()
+    lossCos = torch.nn.CosineSimilarity()
+    
+    
+    if args.backbone == '3D':
 
-
-    for epoch in range(epochs):
-        model.train()
-        loss_list = []
-        for img, aug in train_dataloader:         # where does the label come from? torch.Size([16]) why is it 16?
-        # for img in train_dataloader:                # need to augument the image                          
-            img = img.to(device)
-            aug = aug.to(device)
-            outputs = model(aug)
-            # outputs = model(img)
+        for epoch in range(epochs):
+            model.train()
+            loss_list = []
+            for img, aug in train_dataloader:         # where does the label come from? torch.Size([16]) why is it 16?
+            # for img in train_dataloader:                # need to augument the image                          
+                img = img.to(device)
+                aug = aug.to(device)
+                
+                x = torch.unsqueeze(img, dim=1)
+                outputs = model(x)
+                samplePred = outputs[0]
+                pixelPred = outputs[1][:,0,:,:,:]
+                # outputs = model(aug)
+                # outputs = model(img)
+                
+                loss1 = lossMSE(img, pixelPred)
+                loss2 = torch.mean(1- lossCos(img,pixelPred))
+                loss = loss1+loss2
+                # loss = loss1
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+                loss_list.append(loss.item())
+            print('epoch [{}/{}], loss:{:.6f}'.format(epoch + 1, epochs, np.mean(loss_list)))
             
-            loss =  lossFN(img, outputs)
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            loss_list.append(loss.item())
-        print('epoch [{}/{}], loss:{:.4f}'.format(epoch + 1, epochs, np.mean(loss_list)))
+            
+            # visualization
+            visualizer.visualize_image_batch(img[0,50], epoch, image_name='img_50')
+            visualizer.visualize_image_batch(img[0,125], epoch, image_name='img_125')
+            visualizer.visualize_image_batch(img[0,200], epoch, image_name='img_200')
+            visualizer.visualize_image_batch(aug[0,50], epoch, image_name='aug_50')
+            visualizer.visualize_image_batch(aug[0,125], epoch, image_name='aug_125')
+            visualizer.visualize_image_batch(aug[0,200], epoch, image_name='aug_200')    
+            visualizer.visualize_image_batch(pixelPred[0,50], epoch, image_name='out_50')
+            visualizer.visualize_image_batch(pixelPred[0,125], epoch, image_name='out_125')
+            visualizer.visualize_image_batch(pixelPred[0,200], epoch, image_name='out_200')    
+            
+    elif args.backbone == '2D':
         
+        for epoch in range(epochs):
+            model.train()
+            loss_list = []
+            for img, aug in train_dataloader:
+                img = img.to(device)
+                aug = aug.to(device)
+                outputs = torch.zeros_like(img)  
+                
+                for i in range(img.shape[2]):
+                    raw = img[:,i,:,:]
+                    raw = torch.unsqueeze(raw, dim=1)
+                    aug_slice = aug[:,i,:,:]
+                    aug_slice = torch.unsqueeze(aug_slice, dim=1)
+
+                    output_slice = model(aug_slice)
+                    # output_slice = torch.squeeze(output_slice, dim=1)
+                    outputs[:,i,:,:] = output_slice
+                    
+                    loss1 =  lossMSE(raw, output_slice)
+                    loss2 = torch.mean(1- lossCos(raw,output_slice))
+                    loss = loss1+loss2
+                    loss = loss1
+                    optimizer.zero_grad()
+                    loss.backward()
+                    optimizer.step()
+                    loss_list.append(loss.item())
+                    
+            print('epoch [{}/{}], loss:{:.6f}'.format(epoch + 1, epochs, np.mean(loss_list)))
         
-        # visualization
-        
-        
-        
-        
+            # visualization
+            visualizer.visualize_image_batch(img[0,50], epoch, image_name='img_50')
+            visualizer.visualize_image_batch(img[0,125], epoch, image_name='img_125')
+            visualizer.visualize_image_batch(img[0,200], epoch, image_name='img_200')
+            visualizer.visualize_image_batch(aug[0,50], epoch, image_name='aug_50')
+            visualizer.visualize_image_batch(aug[0,125], epoch, image_name='aug_125')
+            visualizer.visualize_image_batch(aug[0,200], epoch, image_name='aug_200')    
+            visualizer.visualize_image_batch(outputs[0,50], epoch, image_name='out_50')
+            visualizer.visualize_image_batch(outputs[0,125], epoch, image_name='out_125')
+            visualizer.visualize_image_batch(outputs[0,200], epoch, image_name='out_200')    
+                
+                
+                
+                
+                # # for i in range(img.shape[2]):
+                # for i in range(10):
+                #     raw = img[:,i,:,:]
+                #     aug_slice = aug[:,i,:,:]
+                #     aug_slice = torch.unsqueeze(aug_slice, dim=1)
+
+                #     output_slice = model(aug_slice)
+                #     output_slice = torch.squeeze(output_slice, dim=1)
+                #     outputs[:,i,:,:] = output_slice
+                    
+                    
+                    
+                
+                # loss1 =  lossMSE(img, outputs)
+                # loss2 = torch.mean(1- lossCos(img,outputs))
+                # loss = loss1+loss2
+                # loss = loss1
+                # optimizer.zero_grad()
+                # loss.backward()
+                # optimizer.step()
+                # loss_list.append(loss.item())
         
         
         # if (epoch + 1) % 10 == 0:
@@ -101,12 +192,12 @@ if __name__ == '__main__':
     parser.add_argument('--epochs', default=80, action='store', type=int)
     parser.add_argument('--data_path', default='/home/zhaoxiang/mood_challenge_data/data', type=str)
     parser.add_argument('--checkpoint_path', default='/checkpoints/', action='store', type=str)
-    parser.add_argument('--backbone', default='crossPred', action='store',choices = ['crossPred', 'DRAEM'])
+    parser.add_argument('--backbone', default='3D', action='store',choices = ['3D', '2D'])
     parser.add_argument('--img_size', default=256, action='store')
     
     
     parser.add_argument('--loss_mode', default='MSE', action='store', choices = ['MSE', 'Cos', 'MSE_Cos'])
-    parser.add_argument('--gpu_id', default=0, action='store', type=int, required=False)
+    parser.add_argument('--gpu_id', default=1, action='store', type=int, required=False)
     parser.add_argument('--augumentation', default='gaussianUnified', action='store',choices = ['gaussianSeperate', 'gaussianUnified', 'Circle'])
     parser.add_argument('--task', default='Brain', action='store',choices = ['Brain', 'Abdom'])
     
@@ -117,3 +208,4 @@ if __name__ == '__main__':
     setup_seed(111)
     train()
 
+  

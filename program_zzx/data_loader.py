@@ -95,7 +95,9 @@ class TrainDataset(Dataset):
                            'Circle': self.Circle_Aug}
 
         self.img_dir = os.path.join(root_dir, mode)
+        # self.image_paths = sorted(glob.glob(self.img_dir+"/{}_train".format(mode)+"/*.nii.gz"))
         self.image_paths = sorted(glob.glob(self.img_dir+"/train"+"/*.nii.gz"))
+        
         
         if anomaly_source_path:
             self.anomaly_source_paths = sorted(glob.glob(anomaly_source_path+"/*/*.jpg"))
