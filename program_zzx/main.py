@@ -20,7 +20,7 @@ from torch.nn import functional as F
 
 from tensorboard_visualizer import TensorboardVisualizer
 
-from test import evaluation
+from evaluation import evaluation3D
 
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -63,10 +63,14 @@ def train():
 
     if args.backbone == '3D':
         # model = Modified3DUNet(1, n_classes, base_n_filter=4)
-        model = UNet3D(1, 1, f_maps=16)
+        model = UNet3D(1, 1, f_maps=8)
     elif args.backbone == '2D':
         model = DiscriminativeSubNetwork(in_channels=1, out_channels=1)
+        
+    if args.resume_training:
+        model.load_state_dict(torch.load(ckp_path)['model'])    
     model.to(device)
+    
 
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, betas=(0.5,0.999))
     lossMSE = torch.nn.MSELoss()
@@ -76,7 +80,7 @@ def train():
     if args.backbone == '3D':
 
         for epoch in range(epochs):
-            # pixelAP, sampleAP = evaluation(args, epoch, device, model, test_dataloader, visualizer)
+            pixelAP, sampleAP = evaluation3D(args, epoch, device, model, test_dataloader, visualizer)
             model.train()
             loss_list = []
             for img, aug in train_dataloader:         # where does the label come from? torch.Size([16]) why is it 16?
@@ -115,7 +119,7 @@ def train():
             visualizer.visualize_image_batch(pixelPred[0,200], epoch, image_name='out_200')    
             
             if (epoch + 1) % 10 == 0:
-                pixelAP, sampleAP = evaluation3D(args, epoch, device, model, test_dataloader)
+                pixelAP, sampleAP = evaluation3D(args, epoch, device, model, test_dataloader, visualizer)
                 print('Pixel Average Precision:{:.4f}, Sample Average Precision:{:.4f}'.format(pixelAP, sampleAP))
                 torch.save({'model': model.state_dict()}, ckp_path)
 
@@ -211,6 +215,7 @@ if __name__ == '__main__':
     parser.add_argument('--gpu_id', default=1, action='store', type=int, required=False)
     parser.add_argument('--augumentation', default='gaussianUnified', action='store',choices = ['gaussianSeperate', 'gaussianUnified', 'Circle'])
     parser.add_argument('--task', default='Brain', action='store',choices = ['Brain', 'Abdom'])
+    parser.add_argument('--resume_training', default=True, type = bool)
     
     
     args = parser.parse_args()

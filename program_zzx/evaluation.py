@@ -18,7 +18,8 @@ def evaluation3D(args, epoch, device, model, test_dataloader, visualizer):
     for (img, img_path) in test_dataloader:
         img = img.to(device)
         x = torch.unsqueeze(img, dim=1)
-        pred = model(x)[1][:,0,:,:,:]
+        # pred = model(x)[1][:,0,:,:,:]
+        pred = model(x)[:,0,:,:,:]
         
         difference = cal_distance_map(img[0,:,:].to('cpu').detach().numpy(), pred[0,:,:].to('cpu').detach().numpy())
         
