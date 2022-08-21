@@ -20,7 +20,7 @@ from torch.nn import functional as F
 
 from tensorboard_visualizer import TensorboardVisualizer
 
-from evaluation import evaluation3D
+from evaluation import evaluation3D, evaluation2D
 
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -48,7 +48,7 @@ def train():
     log_dir = '/home/zhaoxiang/log'
     
     visualizer = TensorboardVisualizer(log_dir=os.path.join(log_dir, args.backbone))
-    ckp_path = os.path.join('/home/zhaoxiang/checkpoints', args.backbone)
+    ckp_path = os.path.join('/home/zhaoxiang/checkpoints', args.backbone + '.pckl')
         
     n_classes = 2
         
@@ -130,6 +130,7 @@ def train():
             model.train()
             loss_list = []
             for img, aug in train_dataloader:
+                pixelAP, sampleAP = evaluation2D(args, epoch, device, model, test_dataloader, visualizer)
                 img = img.to(device)
                 aug = aug.to(device)
                 outputs = torch.zeros_like(img)  
@@ -165,6 +166,10 @@ def train():
             visualizer.visualize_image_batch(outputs[0,50], epoch, image_name='out_50')
             visualizer.visualize_image_batch(outputs[0,125], epoch, image_name='out_125')
             visualizer.visualize_image_batch(outputs[0,200], epoch, image_name='out_200')    
+            
+            
+            print('Pixel Average Precision:{:.4f}, Sample Average Precision:{:.4f}'.format(pixelAP, sampleAP))
+            torch.save({'model': model.state_dict()}, ckp_path)
             
             
             
@@ -207,7 +212,6 @@ if __name__ == '__main__':
     parser.add_argument('--epochs', default=80, action='store', type=int)
     parser.add_argument('--data_path', default='/home/zhaoxiang/mood_challenge_data/data', type=str)
     parser.add_argument('--checkpoint_path', default='/checkpoints/', action='store', type=str)
-    parser.add_argument('--backbone', default='3D', action='store',choices = ['3D', '2D'])
     parser.add_argument('--img_size', default=256, action='store')
     
     
@@ -215,7 +219,8 @@ if __name__ == '__main__':
     parser.add_argument('--gpu_id', default=1, action='store', type=int, required=False)
     parser.add_argument('--augumentation', default='gaussianUnified', action='store',choices = ['gaussianSeperate', 'gaussianUnified', 'Circle'])
     parser.add_argument('--task', default='Brain', action='store',choices = ['Brain', 'Abdom'])
-    parser.add_argument('--resume_training', default=True, type = bool)
+    parser.add_argument('--backbone', default='2D', action='store',choices = ['3D', '2D'])
+    parser.add_argument('--resume_training', default=False, type = bool)
     
     
     args = parser.parse_args()
