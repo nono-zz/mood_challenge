@@ -56,8 +56,8 @@ def train():
     print(device)
     data_path = args.data_path
     
-    train_data = TrainDataset(root_dir=data_path, size=256, augumentation=args.augumentation)             # what does the ImageFolder stands for?
-    test_data = TestDataset(root_dir=data_path, size=256, augumentation=args.augumentation)
+    train_data = TrainDataset(root_dir=data_path, size=[256,256], augumentation=args.augumentation)             # what does the ImageFolder stands for?
+    test_data = TestDataset(root_dir=data_path, size=[256,256], augumentation=args.augumentation)
     train_dataloader = torch.utils.data.DataLoader(train_data, batch_size=batch_size, shuffle=False)         # learn how torch.utils.data.DataLoader functions
     test_dataloader = torch.utils.data.DataLoader(test_data, batch_size=batch_size, shuffle=False)
 
@@ -127,10 +127,10 @@ def train():
     elif args.backbone == '2D':
         
         for epoch in range(epochs):
-            model.train()
             loss_list = []
+            pixelAP, sampleAP = evaluation2D(args, epoch, device, model, test_dataloader, visualizer)
+            model.train()
             for img, aug in train_dataloader:
-                pixelAP, sampleAP = evaluation2D(args, epoch, device, model, test_dataloader, visualizer)
                 img = img.to(device)
                 aug = aug.to(device)
                 outputs = torch.zeros_like(img)  
@@ -217,7 +217,7 @@ if __name__ == '__main__':
     
     parser.add_argument('--loss_mode', default='MSE', action='store', choices = ['MSE', 'Cos', 'MSE_Cos'])
     parser.add_argument('--gpu_id', default=1, action='store', type=int, required=False)
-    parser.add_argument('--augumentation', default='gaussianUnified', action='store',choices = ['gaussianSeperate', 'gaussianUnified', 'Circle'])
+    parser.add_argument('--augumentation', default='DRAEM', action='store',choices = ['gaussianSeperate', 'gaussianUnified', 'Circle', 'DRAEM'])
     parser.add_argument('--task', default='Brain', action='store',choices = ['Brain', 'Abdom'])
     parser.add_argument('--backbone', default='2D', action='store',choices = ['3D', '2D'])
     parser.add_argument('--resume_training', default=False, type = bool)
