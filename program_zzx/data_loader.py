@@ -1,4 +1,5 @@
 from ctypes import sizeof
+from logging import exception
 import os
 from this import d
 import numpy as np
@@ -43,9 +44,9 @@ class TestDataset(Dataset):
             self.anomaly_source_paths = sorted(glob.glob(anomaly_source_path+"/*/*.jpg"))
 
         self.augmenters = [iaa.GammaContrast((0.5,2.0),per_channel=True),
-                      iaa.MultiplyAndAddToBrightness(mul=(0.8,1.2),add=(-30,30)),
+                    #   iaa.MultiplyAndAddToBrightness(mul=(0.8,1.2),add=(-30,30)),
                       iaa.pillike.EnhanceSharpness(),
-                      iaa.AddToHueAndSaturation((-50,50),per_channel=True),
+                    #   iaa.AddToHueAndSaturation((-50,50),per_channel=True),
                       iaa.Solarize(0.5, threshold=(32,128)),
                       iaa.Posterize(),
                       iaa.Invert(),
@@ -73,6 +74,20 @@ class TestDataset(Dataset):
                               self.augmenters[aug_ind[2]]]
                              )
         return aug
+    
+    def getBbox(self, image):
+        image = np.squeeze(image, axis=2)
+        mask = np.zeros_like(image)
+        B = np.argwhere(image)
+        try:
+            (ystart, xstart), (ystop, xstop) = B.min(0), B.max(0) + 1
+            mask[ystart:ystop, xstart:xstop] = 1
+        except:
+            return np.expand_dims(image, axis=2)
+            
+        mask = np.expand_dims(image, axis=2)
+        return mask
+        
 
     def DRAEM_Aug(self, image, anomaly_source_image):
         aug = self.randAugmenter()
@@ -104,9 +119,11 @@ class TestDataset(Dataset):
             return image, np.zeros_like(perlin_thr, dtype=np.float32), np.array([0.0],dtype=np.float32)
         else:
             augmented_image = augmented_image.astype(np.float32)
-            objectMask = image > 0.01
+            # objectMask = image > 0.01
+            
+            ObjectMask = self.getBbox(image)
             NoiseMask = (perlin_thr).astype(np.float32)
-            msk = NoiseMask * objectMask
+            msk = NoiseMask * ObjectMask
             augmented_image = msk * augmented_image + (1-msk)*image
             has_anomaly = 1.0
             if np.sum(msk) == 0:
@@ -210,10 +227,10 @@ class TestDataset(Dataset):
             anomaly_mask_list.append(anomaly_mask)
             has_anomaly_list.append(has_anomaly)
             
-        image = np.stack(image_list)
-        augmented_image = np.stack(augmented_image_list, axis=0)
-        anomaly_mask = np.stack(anomaly_mask_list, axis=0)
-        has_anomaly = np.stack(has_anomaly_list, axis=0)        
+        image = np.stack(image_list).squeeze(axis=1)
+        augmented_image = np.stack(augmented_image_list, axis=0).squeeze(axis=1)
+        anomaly_mask = np.stack(anomaly_mask_list, axis=0).squeeze(axis=1)
+        has_anomaly = np.stack(has_anomaly_list, axis=0).squeeze(axis=1)       
         
         return image, augmented_image, anomaly_mask, has_anomaly
 
@@ -222,8 +239,8 @@ class TestDataset(Dataset):
             anomaly_source_idx = torch.randint(0, len(self.image_paths), (1,)).item()
             image, augmented_image, anomaly_mask, has_anomaly = self.DRAEM_transform(self.image_paths[idx],
                                                                             self.image_paths[anomaly_source_idx])
-            sample = {'image': image, "anomaly_mask": anomaly_mask,
-                    'augmented_image': augmented_image, 'has_anomaly': has_anomaly, 'idx': idx}
+            # sample = {'image': image, "anomaly_mask": anomaly_mask,
+            #         'augmented_image': augmented_image, 'has_anomaly': has_anomaly, 'idx': idx}
             
             return image, anomaly_mask, augmented_image, has_anomaly
             

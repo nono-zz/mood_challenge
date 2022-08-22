@@ -8,7 +8,7 @@ import numpy as np
 import random
 import os
 from torch.utils.data import DataLoader
-from model import Modified3DUNet, DiscriminativeSubNetwork
+from model import Modified3DUNet, DiscriminativeSubNetwork, ReconstructiveSubNetwork
 from model_unet3D import UNet3D
 
 from data_loader import TrainDataset, TestDataset
@@ -61,15 +61,33 @@ def train():
     train_dataloader = torch.utils.data.DataLoader(train_data, batch_size=batch_size, shuffle=False)         # learn how torch.utils.data.DataLoader functions
     test_dataloader = torch.utils.data.DataLoader(test_data, batch_size=batch_size, shuffle=False)
 
-    if args.backbone == '3D':
-        # model = Modified3DUNet(1, n_classes, base_n_filter=4)
-        model = UNet3D(1, 1, f_maps=8)
-    elif args.backbone == '2D':
-        model = DiscriminativeSubNetwork(in_channels=1, out_channels=1)
+    if args.augumentation != 'DRAEM':
+
+        if args.backbone == '3D':
+            # model = Modified3DUNet(1, n_classes, base_n_filter=4)
+            model = UNet3D(1, 1, f_maps=8)
+        elif args.backbone == '2D':
+            model = DiscriminativeSubNetwork(in_channels=1, out_channels=1)
         
-    if args.resume_training:
-        model.load_state_dict(torch.load(ckp_path)['model'])    
-    model.to(device)
+        if args.resume_training:
+            model.load_state_dict(torch.load(ckp_path)['model'])    
+        model.to(device)
+    
+    else:
+        model_rec = ReconstructiveSubNetwork(in_channels=1, out_channels=1)
+        model_seg = DiscriminativeSubNetwork(in_channels=1, out_channels=1)
+   
+        if args.resume_training:
+            model_rec.load_state_dict(torch.load(ckp_path)['model_rec'])  
+            model_seg.load_state_dict(torch.load(ckp_path)['model_seg'])   
+            
+        model_rec.to(device)
+        model_seg.to(device)
+         
+              
+        
+        
+        
     
 
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, betas=(0.5,0.999))
@@ -125,6 +143,16 @@ def train():
 
             
     elif args.backbone == '2D':
+        if args.augumentation == 'DRAEM':
+            for epoch in range(epochs):
+                loss_list = []
+                model.train()
+                for image, anomaly_mask, augmented_image, has_anomaly in train_dataloader:
+                
+        
+        
+        
+        
         
         for epoch in range(epochs):
             loss_list = []
