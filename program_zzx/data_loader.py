@@ -16,6 +16,8 @@ import torch.nn
 import random
 from perlin import rand_perlin_2d_np
 
+from torchvision.utils import save_image    
+
 import torchio as tio
 
 
@@ -209,9 +211,9 @@ class TestDataset(Dataset):
         anomlaySource_3D = self.read_nib_2_cv2(anomaly_source_path)
         anomlaySource_3D = cv2.resize(anomlaySource_3D, dsize=(self.resize_shape[1], self.resize_shape[0]))
 
-        do_aug_orig = torch.rand(1).numpy()[0] > 0.7
-        if do_aug_orig:
-            object_3D = self.rot(object_3D=object_3D)
+        # do_aug_orig = torch.rand(1).numpy()[0] > 0.7
+        # if do_aug_orig:
+        #     object_3D = self.rot(object_3D=object_3D)
         
         image_list, augmented_image_list, anomaly_mask_list, has_anomaly_list = [], [], [], []
         for i, image in enumerate(object_3D):
@@ -235,38 +237,40 @@ class TestDataset(Dataset):
         return image, augmented_image, anomaly_mask, has_anomaly
 
     def __getitem__(self, idx):
-        if self.augumentation == 'DRAEM':
-            anomaly_source_idx = torch.randint(0, len(self.image_paths), (1,)).item()
-            image, augmented_image, anomaly_mask, has_anomaly = self.DRAEM_transform(self.image_paths[idx],
-                                                                            self.image_paths[anomaly_source_idx])
-            # sample = {'image': image, "anomaly_mask": anomaly_mask,
-            #         'augmented_image': augmented_image, 'has_anomaly': has_anomaly, 'idx': idx}
+        # if self.augumentation == 'DRAEM':
+        #     anomaly_source_idx = torch.randint(0, len(self.image_paths), (1,)).item()
+        #     image, augmented_image, anomaly_mask, has_anomaly = self.DRAEM_transform(self.image_paths[idx],
+        #                                                                     self.image_paths[anomaly_source_idx])
+        #     # sample = {'image': image, "anomaly_mask": anomaly_mask,
+        #     #         'augmented_image': augmented_image, 'has_anomaly': has_anomaly, 'idx': idx}
             
-            return image, anomaly_mask, augmented_image, has_anomaly
+        #     return image, anomaly_mask, augmented_image, has_anomaly
             
         
-        elif 'Gaussian' in self.augumentation:
+        # elif 'Gaussian' in self.augumentation:
             
-            img_path = self.image_paths[idx]
-            nimg = nib.load(img_path)
-            nimg_array = nimg.get_fdata()           # 3d image
-            img_list = []
-            for i in range(nimg_array.shape[2]):
-                # slice =  np.expand_dims(nimg_array[:,:,i], axis=0)
-                slice = nimg_array[:,:,i]
-                # nimg_tensor = self.transform(slice)
-                nimg_tensor = torch.tensor(slice)
-                nimg_tensor = torch.unsqueeze(nimg_tensor, dim = 0)
-                img_list.append(nimg_tensor)
-            # img_tensor = torch.tensor(img_list)
-            img_tensor = torch.cat(img_list, dim = 0)
-            img_tensor = img_tensor.float()             # torch.tensor([256, 256, 256])
+        img_path = self.image_paths[idx]
+        nimg = nib.load(img_path)
+        nimg_array = nimg.get_fdata()           # 3d image
+        img_list = []
+        for i in range(nimg_array.shape[2]):
+            # slice =  np.expand_dims(nimg_array[:,:,i], axis=0)
+            slice = nimg_array[:,:,i]
+            # nimg_tensor = self.transform(slice)
+            nimg_tensor = torch.tensor(slice)
+            nimg_tensor = torch.unsqueeze(nimg_tensor, dim = 0)
+            img_list.append(nimg_tensor)
+            save_image(nimg_tensor, 'data_loader_image.png')
             
-            # aug_tensor = self.dispatcher[self.augumentation](img_tensor)
-            # aug_tensor = aug_tensor.float()
-            
+        # img_tensor = torch.tensor(img_list)
+        img_tensor = torch.cat(img_list, dim = 0)
+        img_tensor = img_tensor.float()             # torch.tensor([256, 256, 256])
+        
+        # aug_tensor = self.dispatcher[self.augumentation](img_tensor)
+        # aug_tensor = aug_tensor.float()
+        
 
-            return (img_tensor, img_path)
+        return (img_tensor, img_path)
 
 
 
@@ -296,9 +300,9 @@ class TrainDataset(Dataset):
             self.anomaly_source_paths = sorted(glob.glob(anomaly_source_path+"/*/*.jpg"))
 
         self.augmenters = [iaa.GammaContrast((0.5,2.0),per_channel=True),
-                      iaa.MultiplyAndAddToBrightness(mul=(0.8,1.2),add=(-30,30)),
+                    #   iaa.MultiplyAndAddToBrightness(mul=(0.8,1.2),add=(-30,30)),
                       iaa.pillike.EnhanceSharpness(),
-                      iaa.AddToHueAndSaturation((-50,50),per_channel=True),
+                    #   iaa.AddToHueAndSaturation((-50,50),per_channel=True),
                       iaa.Solarize(0.5, threshold=(32,128)),
                       iaa.Posterize(),
                       iaa.Invert(),
@@ -326,15 +330,47 @@ class TrainDataset(Dataset):
                               self.augmenters[aug_ind[2]]]
                              )
         return aug
+    
+    def getBbox(self, image):
+        image = np.squeeze(image, axis=2)
+        mask = np.zeros_like(image)
+        B = np.argwhere(image)
+        try:
+            (ystart, xstart), (ystop, xstop) = B.min(0), B.max(0) + 1
+            mask[ystart:ystop, xstart:xstop] = 1
+            mask = np.expand_dims(mask, axis=2)
+            return mask
+        except:
+            return np.expand_dims(image, axis=2)
+        
+    def getBbox_3D(self, image):
+        mask_3D = np.zeros_like(image)
+        for i, slice in enumerate(image):
+            mask = np.zeros_like(slice)
+            # B = np.argwhere(slice)
+            B = torch.nonzero(slice)
+            try:
+                (ystart, xstart), _ = B.min(0)
+                (ystop, xstop), _ = B.max(0)
+                (ystop, xstop) = (ystop+1, xstop+1)
+                # (ystart, xstart), (ystop, xstop) = B.min(0), B.max(0) + 1
+                mask[ystart:ystop, xstart:xstop] = 1
+                mask_3D[i,:,:] = mask
+            except:
+                mask_3D[i,:,:] = mask
+                
+        return mask_3D
+       
+        
 
-    def DRAEM_Aug(self, image, anomaly_source_path):
+    def DRAEM_Aug(self, image, anomaly_source_image):
         aug = self.randAugmenter()
-        perlin_scale = 6
+        perlin_scale = 6                        # maybe determine the noise size
         min_perlin_scale = 0
-        anomaly_source_img = cv2.imread(anomaly_source_path)
-        anomaly_source_img = cv2.resize(anomaly_source_img, dsize=(self.resize_shape[1], self.resize_shape[0]))
+        # anomaly_source_img = self.read_nib_2_cv2(anomaly_source_path)
+        # anomaly_source_img = cv2.resize(anomaly_source_img, dsize=(self.resize_shape[1], self.resize_shape[0]))
 
-        anomaly_img_augmented = aug(image=anomaly_source_img)
+        anomaly_img_augmented = aug(image=anomaly_source_image)
         perlin_scalex = 2 ** (torch.randint(min_perlin_scale, perlin_scale, (1,)).numpy()[0])
         perlin_scaley = 2 ** (torch.randint(min_perlin_scale, perlin_scale, (1,)).numpy()[0])
 
@@ -357,7 +393,11 @@ class TrainDataset(Dataset):
             return image, np.zeros_like(perlin_thr, dtype=np.float32), np.array([0.0],dtype=np.float32)
         else:
             augmented_image = augmented_image.astype(np.float32)
-            msk = (perlin_thr).astype(np.float32)
+            # objectMask = image > 0.01
+            
+            ObjectMask = self.getBbox(image)
+            NoiseMask = (perlin_thr).astype(np.float32)
+            msk = NoiseMask * ObjectMask
             augmented_image = msk * augmented_image + (1-msk)*image
             has_anomaly = 1.0
             if np.sum(msk) == 0:
@@ -408,11 +448,12 @@ class TrainDataset(Dataset):
         ns = ns.repeat(x.shape[0], 1, 1)
 
         # mask = x.sum(dim=1, keepdim=True) > 0.01
-        mask = x > 0.01
+        # mask = x > 0.01
+        mask = self.getBbox_3D(x)
         ns *= mask # Only apply the noise in the foreground.
         res = x + ns * Coefs
 
-        return res  
+        return res, ns * Coefs, mask
     
     def Circle_Aug(x):
         from skimage import draw
@@ -420,47 +461,84 @@ class TrainDataset(Dataset):
         rr, cc = draw.circle_perimeter(100, 100, radius=80, shape=arr.shape)
         arr[rr, cc] = 1
         
-        
-
-    def DRAEM_transform(self, image_path, anomaly_source_path):
-        image = cv2.imread(image_path)
-        image = cv2.resize(image, dsize=(self.resize_shape[1], self.resize_shape[0]))
-
-        do_aug_orig = torch.rand(1).numpy()[0] > 0.7
-        if do_aug_orig:
-            image = self.rot(image=image)
-
-        image = np.array(image).reshape((image.shape[0], image.shape[1], image.shape[2])).astype(np.float32) / 255.0
-        augmented_image, anomaly_mask, has_anomaly = self.augment_image(image, anomaly_source_path)
-        augmented_image = np.transpose(augmented_image, (2, 0, 1))
-        image = np.transpose(image, (2, 0, 1))
-        anomaly_mask = np.transpose(anomaly_mask, (2, 0, 1))
-        return image, augmented_image, anomaly_mask, has_anomaly
-
-    def __getitem__(self, idx):
-        # idx = torch.randint(0, len(self.image_paths), (1,)).item()
-        # anomaly_source_idx = torch.randint(0, len(self.anomaly_source_paths), (1,)).item()
-        # image, augmented_image, anomaly_mask, has_anomaly = self.transform_image(self.image_paths[idx],
-        #                                                                    self.anomaly_source_paths[anomaly_source_idx])
-        # sample = {'image': image, "anomaly_mask": anomaly_mask,
-        #           'augmented_image': augmented_image, 'has_anomaly': has_anomaly, 'idx': idx}
-        img_path = self.image_paths[idx]
+    def read_nib_2_cv2(self, img_path):
         nimg = nib.load(img_path)
         nimg_array = nimg.get_fdata()           # 3d image
         img_list = []
         for i in range(nimg_array.shape[2]):
-            # slice =  np.expand_dims(nimg_array[:,:,i], axis=0)
             slice = nimg_array[:,:,i]
-            # nimg_tensor = self.transform(slice)
-            nimg_tensor = torch.tensor(slice)
-            nimg_tensor = torch.unsqueeze(nimg_tensor, dim = 0)
-            img_list.append(nimg_tensor)
-        # img_tensor = torch.tensor(img_list)
-        img_tensor = torch.cat(img_list, dim = 0)
-        img_tensor = img_tensor.float()             # torch.tensor([256, 256, 256])
+            slice_arr = (slice*255).astype(np.uint8)
+            # slice.arr = np.expand_dims(slice_arr, axis=0)
+            img_list.append(slice_arr)
+            
+        img_arr = np.stack(img_list, axis=0)
+        return img_arr
         
-        aug_tensor = self.dispatcher[self.augumentation](img_tensor)
-        aug_tensor = aug_tensor.float()
         
 
-        return img_tensor, aug_tensor
+    def DRAEM_transform(self, image_path, anomaly_source_path):
+        # read nibal as cv2 format
+        object_3D = self.read_nib_2_cv2(image_path)
+        object_3D = cv2.resize(object_3D, dsize=(self.resize_shape[1], self.resize_shape[0]))
+        
+        anomlaySource_3D = self.read_nib_2_cv2(anomaly_source_path)
+        anomlaySource_3D = cv2.resize(anomlaySource_3D, dsize=(self.resize_shape[1], self.resize_shape[0]))
+
+        # do_aug_orig = torch.rand(1).numpy()[0] > 0.7
+        # if do_aug_orig:
+        #     object_3D = self.rot(object_3D=object_3D)
+        
+        image_list, augmented_image_list, anomaly_mask_list, has_anomaly_list = [], [], [], []
+        for i, image in enumerate(object_3D):
+            image = np.expand_dims(image, axis = 2)
+            image = np.array(image).reshape((image.shape[0], image.shape[1], image.shape[2])).astype(np.float32) / 255.0
+            augmented_image, anomaly_mask, has_anomaly = self.DRAEM_Aug(image, np.expand_dims(anomlaySource_3D[i], axis = 2))
+            augmented_image = np.transpose(augmented_image, (2, 0, 1))
+            image = np.transpose(image, (2, 0, 1))
+            anomaly_mask = np.transpose(anomaly_mask, (2, 0, 1))
+            
+            image_list.append(image)
+            augmented_image_list.append(augmented_image)
+            anomaly_mask_list.append(anomaly_mask)
+            has_anomaly_list.append(has_anomaly)
+            
+        image = np.stack(image_list).squeeze(axis=1)
+        augmented_image = np.stack(augmented_image_list, axis=0).squeeze(axis=1)
+        anomaly_mask = np.stack(anomaly_mask_list, axis=0).squeeze(axis=1)
+        has_anomaly = np.stack(has_anomaly_list, axis=0).squeeze(axis=1)       
+        
+        return image, augmented_image, anomaly_mask, has_anomaly
+
+    def __getitem__(self, idx):
+        if self.augumentation == 'DRAEM':
+            anomaly_source_idx = torch.randint(0, len(self.image_paths), (1,)).item()
+            image, augmented_image, anomaly_mask, has_anomaly = self.DRAEM_transform(self.image_paths[idx],
+                                                                            self.image_paths[anomaly_source_idx])
+            # sample = {'image': image, "anomaly_mask": anomaly_mask,
+            #         'augmented_image': augmented_image, 'has_anomaly': has_anomaly, 'idx': idx}
+            
+            return image, anomaly_mask, augmented_image, has_anomaly
+            
+        
+        elif 'gaussian' in self.augumentation:
+            
+            img_path = self.image_paths[idx]
+            nimg = nib.load(img_path)
+            nimg_array = nimg.get_fdata()           # 3d image
+            img_list = []
+            for i in range(nimg_array.shape[2]):
+                # slice =  np.expand_dims(nimg_array[:,:,i], axis=0)
+                slice = nimg_array[:,:,i]
+                # nimg_tensor = self.transform(slice)
+                nimg_tensor = torch.tensor(slice)
+                nimg_tensor = torch.unsqueeze(nimg_tensor, dim = 0)
+                img_list.append(nimg_tensor)
+            # img_tensor = torch.tensor(img_list)
+            img_tensor = torch.cat(img_list, dim = 0)
+            img_tensor = img_tensor.float()             # torch.tensor([256, 256, 256])
+            
+            aug_tensor, tumor, mask = self.dispatcher[self.augumentation](img_tensor)
+            aug_tensor = aug_tensor.float()
+            
+
+            return (img_tensor, aug_tensor, mask)
