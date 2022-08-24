@@ -12,6 +12,7 @@ import os
 from torch.utils.data import DataLoader
 from model import Modified3DUNet, DiscriminativeSubNetwork, ReconstructiveSubNetwork
 from model_unet3D import UNet3D
+from model_noise import UNet
 
 from data_loader import TrainDataset, TestDataset
 
@@ -82,11 +83,14 @@ def train():
             # model = Modified3DUNet(1, n_classes, base_n_filter=4)
             model = UNet3D(1, 2, f_maps=8)
         elif args.backbone == '2D':
-            model = DiscriminativeSubNetwork(in_channels=1, out_channels=1)
+            # model = DiscriminativeSubNetwork(in_channels=1, out_channels=1)
+            model = UNet(in_channels=1, n_classes=1, norm="group", up_mode="upconv", depth=4, wf=6, padding=True).to(device)
         
         if args.resume_training:
-            model.load_state_dict(torch.load(ckp_path)['model'])    
-        model.to(device)
+            # model.load_state_dict(torch.load(ckp_path)['model'])    
+            
+            model.load_state_dict(torch.load('/home/zhaoxiang/baselines/pretrain/output/mood_0.0001_700_bs8_ws_skip_connection_Gaussian_noise/best.pth'))    
+        model.to(device) 
         optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, betas=(0.5,0.999))
         
     
@@ -345,46 +349,46 @@ def train():
         else:
         
             for epoch in range(epochs):
-                loss_list = []
-                # pixelAP, sampleAP = evaluation2D(args, epoch, device, model, test_dataloader, visualizer)
-                model.train()
-                for img, aug, mask in train_dataloader:
-                    img = img.to(device)
-                    aug = aug.to(device)
-                    outputs = torch.zeros_like(img)  
+                # loss_list = []
+                pixelAP, sampleAP = evaluation2D(args, epoch, device, model, test_dataloader, visualizer)
+                # model.train()
+                # for img, aug, mask in train_dataloader:
+                #     img = img.to(device)
+                #     aug = aug.to(device)
+                #     outputs = torch.zeros_like(img)  
                     
-                    for i in range(img.shape[2]):
-                        raw = img[:,i,:,:]
-                        raw = torch.unsqueeze(raw, dim=1)
-                        aug_slice = aug[:,i,:,:]
-                        aug_slice = torch.unsqueeze(aug_slice, dim=1)
+                #     for i in range(img.shape[2]):
+                #         raw = img[:,i,:,:]
+                #         raw = torch.unsqueeze(raw, dim=1)
+                #         aug_slice = aug[:,i,:,:]
+                #         aug_slice = torch.unsqueeze(aug_slice, dim=1)
 
-                        output_slice = model(aug_slice)
-                        # output_slice = torch.squeeze(output_slice, dim=1)
-                        outputs[:,i,:,:] = output_slice
+                #         output_slice = model(aug_slice)
+                #         # output_slice = torch.squeeze(output_slice, dim=1)
+                #         outputs[:,i,:,:] = output_slice
                         
-                        loss1 =  lossMSE(raw, output_slice)
-                        loss2 = torch.mean(1- lossCos(raw,output_slice))
-                        loss = loss1+loss2
-                        loss = loss1
-                        optimizer.zero_grad()
-                        loss.backward()
-                        optimizer.step()
-                        loss_list.append(loss.item())
+                #         loss1 =  lossMSE(raw, output_slice)
+                #         loss2 = torch.mean(1- lossCos(raw,output_slice))
+                #         loss = loss1+loss2
+                #         loss = loss1
+                #         optimizer.zero_grad()
+                #         loss.backward()
+                #         optimizer.step()
+                #         loss_list.append(loss.item())
                         
                         
-                print('epoch [{}/{}], loss:{:.6f}'.format(epoch + 1, epochs, np.mean(loss_list)))
+                # print('epoch [{}/{}], loss:{:.6f}'.format(epoch + 1, epochs, np.mean(loss_list)))
             
-                # visualization
-                visualizer.visualize_image_batch(img[0,50], epoch, image_name='img_50')
-                visualizer.visualize_image_batch(img[0,125], epoch, image_name='img_125')
-                visualizer.visualize_image_batch(img[0,200], epoch, image_name='img_200')
-                visualizer.visualize_image_batch(aug[0,50], epoch, image_name='aug_50')
-                visualizer.visualize_image_batch(aug[0,125], epoch, image_name='aug_125')
-                visualizer.visualize_image_batch(aug[0,200], epoch, image_name='aug_200')    
-                visualizer.visualize_image_batch(outputs[0,50], epoch, image_name='out_50')
-                visualizer.visualize_image_batch(outputs[0,125], epoch, image_name='out_125')
-                visualizer.visualize_image_batch(outputs[0,200], epoch, image_name='out_200')    
+                # # visualization
+                # visualizer.visualize_image_batch(img[0,50], epoch, image_name='img_50')
+                # visualizer.visualize_image_batch(img[0,125], epoch, image_name='img_125')
+                # visualizer.visualize_image_batch(img[0,200], epoch, image_name='img_200')
+                # visualizer.visualize_image_batch(aug[0,50], epoch, image_name='aug_50')
+                # visualizer.visualize_image_batch(aug[0,125], epoch, image_name='aug_125')
+                # visualizer.visualize_image_batch(aug[0,200], epoch, image_name='aug_200')    
+                # visualizer.visualize_image_batch(outputs[0,50], epoch, image_name='out_50')
+                # visualizer.visualize_image_batch(outputs[0,125], epoch, image_name='out_125')
+                # visualizer.visualize_image_batch(outputs[0,200], epoch, image_name='out_200')    
                 
                 
                 print('Pixel Average Precision:{:.4f}, Sample Average Precision:{:.4f}'.format(pixelAP, sampleAP))
@@ -408,7 +412,7 @@ if __name__ == '__main__':
     parser.add_argument('--augumentation', default='gaussianUnified', action='store',choices = ['gaussianSeperate', 'gaussianUnified', 'Circle', 'DRAEM'])
     parser.add_argument('--task', default='Brain', action='store',choices = ['Brain', 'Abdom'])
     parser.add_argument('--backbone', default='2D', action='store',choices = ['3D', '2D'])
-    parser.add_argument('--resume_training', default=False, type = bool)
+    parser.add_argument('--resume_training', default=True, type = bool)
     
     
     args = parser.parse_args()

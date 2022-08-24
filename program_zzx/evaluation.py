@@ -97,6 +97,7 @@ def evaluation2D(args, epoch, device, model, test_dataloader, visualizer):
             
             pixelGT = nib.load(pixelPath)
             pixelGT = np.rint(pixelGT.get_fdata()).astype(np.int)
+            pixelGT = np.transpose(pixelGT, (2, 0, 1))
             with open(samplePath, "r") as val_fl:
                 val_str = val_fl.readline()
             sampleGT = int(val_str) 
