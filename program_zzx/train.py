@@ -15,6 +15,7 @@ import random
 
 from dataloader_zzx import MVTecDataset, Medical_dataset
 from evaluation_mood import evaluation
+from cutpaste import CutPaste3Way, CutPasteUnion
 
 
 def get_lr(optimizer):
@@ -37,8 +38,8 @@ def get_data_transforms(size, isize):
     # mean_train = [-0.1]
     # std_train = [0.229]
     data_transforms = transforms.Compose([
-        transforms.Resize((size, size)),
-        transforms.CenterCrop(isize),
+        # transforms.Resize((size, size)),
+        # transforms.CenterCrop(isize),
         
         #transforms.CenterCrop(args.input_size),
         transforms.ToTensor()
@@ -49,6 +50,7 @@ def get_data_transforms(size, isize):
         transforms.Resize((size, size)),
         transforms.CenterCrop(isize),
         transforms.ToTensor()])
+
     return data_transforms, gt_transforms
 
         
@@ -86,6 +88,9 @@ def train_on_device(args):
     
     data_transform, gt_transform = get_data_transforms(args.img_size, args.img_size)
     test_transform, _ = get_data_transforms(args.img_size, args.img_size)
+    train_transform = transforms.Compose([])
+    train_transform.transforms.append(CutPaste3Way(transform = test_transform))
+    # test_transform, _ = get_data_transforms(args.img_size, args.img_size)
 
     dirs = os.listdir(main_path)
     
@@ -103,18 +108,19 @@ def train_on_device(args):
 
     from model_noise import UNet
     
-    device = torch.device('cuda:{}'.format(args.gpu_id))
+    # device = torch.device('cuda:{}'.format(args.gpu_id))
+    device = None
     n_input = 1
     n_classes = 1           # the target is the reconstructed image
     depth = 4
     wf = 6
     
     if args.model == 'ws_skip_connection':
-        model = UNet(in_channels=n_input, n_classes=n_classes, norm="group", up_mode="upconv", depth=depth, wf=wf, padding=True).to(device)
+        model = UNet(in_channels=n_input, n_classes=n_classes, norm="group", up_mode="upconv", depth=depth, wf=wf, padding=True).cuda()
     elif args.model == 'DRAEM_reconstruction':
-        model = ReconstructiveSubNetwork(in_channels=n_input, out_channels=n_input).to(device)
+        model = ReconstructiveSubNetwork(in_channels=n_input, out_channels=n_input).cuda()
     elif args.model == 'DRAEM_discriminitive':
-        model = DiscriminativeSubNetwork(in_channels=n_input, out_channels=n_input).to(device)
+        model = DiscriminativeSubNetwork(in_channels=n_input, out_channels=n_input).cuda()
         
     if args.resume_training:
         base_path= '/home/zhaoxiang/baselines/pretrain'
@@ -123,10 +129,10 @@ def train_on_device(args):
         experiment_path = os.path.join(output_path, run_name)
         ckp_path = os.path.join(experiment_path, 'last.pth')
         
-        
+    model = torch.nn.DataParallel(model, device_ids=[0, 1])
     
     
-    train_data = MVTecDataset(root=main_path, transform = test_transform, gt_transform=gt_transform, phase='train', dirs = dirs, data_source=args.experiment_name)
+    train_data = MVTecDataset(root=main_path, transform = test_transform, gt_transform=gt_transform, phase='train', dirs = dirs, data_source=args.experiment_name, args = args)
     val_data = MVTecDataset(root=main_path, transform = test_transform, gt_transform=gt_transform, phase='test', dirs = dirs, data_source=args.experiment_name)
     test_data = MVTecDataset(root=main_path, transform = test_transform, gt_transform=gt_transform, phase='test', dirs = dirs, data_source=args.experiment_name)
         
@@ -138,20 +144,24 @@ def train_on_device(args):
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     
     for epoch in range(args.epochs):
+        # evaluation(args, model, test_dataloader, epoch, loss_l1, visualizer, run_name)
         model.train()
         loss_list = []
         # for img, label, img_path in train_dataloader:         
-        for img in train_dataloader:
-
-            img = img.to(device)
+        for img, aug in train_dataloader:
+            img = img.squeeze(dim = 0)
+            aug = aug.squeeze(dim = 0)
             
-            if "Gaussian" in args.process_method:
-                input = add_Gaussian_noise(img, args.noise_res, args.noise_std, args.img_size)         # if noise -> reconstruction
+            img = img.cuda()
+            aug = aug.cuda()
+            
+            # if "Gaussian" in args.process_method:
+            #     input = add_Gaussian_noise(img, args.noise_res, args.noise_std, args.img_size)         # if noise -> reconstruction
 
-            output = model(input)
+            output = model(aug)
             
         
-            save_image(input, 'input.png')
+            save_image(aug, 'input.png')
             save_image(output, 'output.png')
             save_image(img, 'target.png')
             loss = loss_l1(img, output)
@@ -166,7 +176,7 @@ def train_on_device(args):
         
         
         visualizer.plot_loss(mean(loss_list), epoch, loss_name='L1_loss')
-        visualizer.visualize_image_batch(input, epoch, image_name='input')
+        visualizer.visualize_image_batch(aug, epoch, image_name='input')
         visualizer.visualize_image_batch(img, epoch, image_name='target')
         visualizer.visualize_image_batch(output, epoch, image_name='output')
         
@@ -174,7 +184,7 @@ def train_on_device(args):
             model.eval()
             error_list = []
             for img, gt, label, img_path, saves in val_dataloader:
-                img = img.to(device)
+                img = img.cuda()
                 input = img
                 output = model(input)
                 loss = loss_l1(input, output)
@@ -192,7 +202,7 @@ def train_on_device(args):
             
         if (epoch) % 10 == 0:
             model.eval()
-            evaluation(args, model, test_dataloader, epoch, device, loss_l1, visualizer, run_name)
+            evaluation(args, model, test_dataloader, epoch, loss_l1, visualizer, run_name)
                 
         
         
@@ -219,16 +229,28 @@ if __name__=="__main__":
     parser.add_argument("-img_size", "--img_size", type=float, default=256, help="noise magnitude.")
     
     # need to be changed/checked every time
-    parser.add_argument('--bs', default = 8, action='store', type=int)
-    parser.add_argument('--gpu_id', default = 0, action='store', type=int, required=False)
+    parser.add_argument('--bs', default = 1, action='store', type=int)
+    parser.add_argument('--gpu_id', default = ['0','1'], action='store', type=str, required=False)
     parser.add_argument('--experiment_name', default='mood_cv2', choices=['retina, liver, brain, head', 'chest'], action='store')
     parser.add_argument('--dataset_name', default='Mood_brain_cv2', choices=['hist_DIY', 'Brain_MRI', 'Head_CT', 'CovidX', 'RESC_average'], action='store')
     parser.add_argument('--model', default='ws_skip_connection', choices=['ws_skip_connection', 'DRAEM_reconstruction', 'DRAEM_discriminitive'], action='store')
-    parser.add_argument('--process_method', default='Gaussian_noise', choices=['none', 'Gaussian_noise', 'DRAEM_natural', 'DRAEM_tumor', 'Simplex_noise', 'Simplex_noise_best_best'], action='store')
+    parser.add_argument('--process_method', default='Multi', choices=['none', 'Gaussian_noise', 'DRAEM_natural', 'DRAEM_tumor', 'Simplex_noise', 'Simplex_noise_best_best'], action='store')
     parser.add_argument('--resume_training', default = False, action='store', type=int)
     
     args = parser.parse_args()
+    
+    os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
+    if args.gpu_id is None:
+        gpus = "0"
+        os.environ["CUDA_VISIBLE_DEVICES"]= gpus
+    else:
+        gpus = ""
+        for i in range(len(args.gpu_id)):
+            gpus = gpus + args.gpu_id[i] + ","
+        os.environ["CUDA_VISIBLE_DEVICES"]= gpus[:-1]
 
-    with torch.cuda.device(args.gpu_id):
-        train_on_device(args)
+    torch.backends.cudnn.enabled = True # make sure to use cudnn for computational performance
+
+    # with torch.cuda.device(args.gpu_id):
+    train_on_device(args)
 

@@ -19,7 +19,7 @@ def dice(pred, gt):
     intersection = (pred*gt).sum()
     return (2. * intersection)/(pred.sum() + gt.sum())
 
-def evaluation(args, model, test_dataloader, epoch, device, loss_l1, visualizer, run_name):
+def evaluation(args, model, test_dataloader, epoch, loss_l1, visualizer, run_name, device=None):
     
     base_path= '/home/zhaoxiang/baselines/pretrain'
     output_path = os.path.join(base_path, 'output')
@@ -57,7 +57,7 @@ def evaluation(args, model, test_dataloader, epoch, device, loss_l1, visualizer,
     pixel_pred_list, gt_list, sample_pred_list, label_list = [], [], [], []
     for img, gt, label, img_path, saves in test_dataloader:
     # for img, label, img_path in test_dataloader:
-        img = img.to(device)
+        img = img.cuda()
         input = img
         output = model(input)
         loss = loss_l1(input, output)

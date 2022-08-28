@@ -8,6 +8,12 @@ import numpy as np
 
 import cv2
 import matplotlib.pyplot as plt
+import random
+import torch.nn.functional as F
+
+from anomaly_sythesis import distortion, blackStrip
+
+from cutpaste import CutPasteUnion, CutPaste3Way
 
 # from cutpaste import CutPasteNormal,CutPasteScar, CutPaste3Way, CutPasteUnion, cut_paste_collate_fn, CutPasteBlack, Cut
 
@@ -29,6 +35,24 @@ def get_data_transforms(size, isize):
         transforms.CenterCrop(isize),
         transforms.ToTensor()])
     return data_transforms, gt_transforms
+
+def add_Gaussian_noise(x, noise_res, noise_std, img_size):
+    x = x.unsqueeze(dim = 0)
+    ns = torch.normal(mean=torch.zeros(x.shape[0], x.shape[1], noise_res, noise_res), std=noise_std).to(x.device)
+
+    ns = F.upsample_bilinear(ns, size=[img_size, img_size])
+
+    # Roll to randomly translate the generated noise.
+    roll_x = random.choice(range(128))
+    roll_y = random.choice(range(128))
+    ns = torch.roll(ns, shifts=[roll_x, roll_y], dims=[-2, -1])
+    mask = x.sum(dim=1, keepdim=True) > 0.01
+    ns *= mask # Only apply the noise in the foreground.
+    res = x + ns
+    
+    res = res.squeeze(dim = 0)
+    return res
+
 
 def cutpaste_transform(size,isize):
     cutpaste_type = CutPaste3Way
@@ -82,7 +106,7 @@ def get_data_transforms_augumentation(size, isize):
 
 
 class MVTecDataset(torch.utils.data.Dataset):
-    def __init__(self, root, transform, gt_transform, phase, dirs, data_source = 'liver', rgb=False):
+    def __init__(self, root, transform, gt_transform, phase, dirs, data_source = 'liver', rgb=False, args=None):
         if len(dirs) == 3:
             [train_dir, test_dir, label_dir] = dirs
         elif len(dirs) == 2:
@@ -90,9 +114,10 @@ class MVTecDataset(torch.utils.data.Dataset):
             
         self.phase = phase
         self.transform = transform
-    #     self.transform = transforms.Compose([
-    #     transforms.ToTensor()
-    # ])
+        self.args = args
+        
+        self.cutpaste = CutPasteUnion(transform=self.transform)
+
         self.gt_transform = gt_transform
         self.data_source = data_source
         self.rgb = rgb
@@ -167,12 +192,43 @@ class MVTecDataset(torch.utils.data.Dataset):
         
         if self.phase == 'train':
             img_path = self.img_paths[idx]
-            # img = Image.open(img_path).convert('RGB')
             img = Image.open(img_path)
             img = ImageOps.grayscale(img)
-            pixels = list(img.getdata())
-            img = self.transform(img)
-            return img
+            
+            """ Sample level augmentation"""
+            img_numpy = np.array(img)
+            cv2.imwrite('img_numpy.png', img_numpy)
+            if img_numpy.max() == 0:
+                img_tensor = self.transform(img)
+                img_tensor = img_tensor.repeat(4, 1, 1, 1)
+                return img_tensor,img_tensor
+            
+            blackStrip_img = blackStrip(img_numpy)
+            cv2.imwrite('blackStrip.png', blackStrip_img)
+            distortion_img = distortion(np.array(img))
+            cv2.imwrite('distortion.png', distortion_img)
+            
+            
+            distortion_img = np.expand_dims(distortion_img, axis=2)
+            blackStrip_img = np.expand_dims(blackStrip_img, axis=2)
+            
+            distortion_img = self.transform(distortion_img)
+            blackStrip_img = self.transform(blackStrip_img)
+            
+            
+            """ Pixel level augmentation"""
+            org, cut_img = self.cutpaste(img)
+            # img = self.transform(img)
+            
+            """ Gaussian Noise"""
+            Gaussian_img = add_Gaussian_noise(org, self.args.noise_res, self.args.noise_std, self.args.img_size)  
+
+            img_list = [Gaussian_img, cut_img, distortion_img, blackStrip_img]
+            img_list = [x.unsqueeze(dim=0) for x in img_list]
+            aug_tensor = torch.cat(img_list, dim = 0)
+            
+            org_tensor = (torch.unsqueeze(org, dim=0)).repeat(len(img_list), 1, 1, 1)
+            return org_tensor, aug_tensor
         
         else:
             img_path, gt_path= self.img_paths[idx], self.gt_paths[idx]
