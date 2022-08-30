@@ -3,8 +3,14 @@ import numpy as np
 import torch
 import cv2
 import random
-
+from PIL import Image, ImageOps
 from skimage.draw import random_shapes
+
+from cutpaste_sythesis import CutPasteUnion, CutPaste3Way
+
+import skimage.exposure
+import numpy as np
+from numpy.random import default_rng
 
 # from scipy.misc import lena
 
@@ -114,17 +120,77 @@ def distortion(sss):
     return img
 
 
+def cp(img_path):
+    img = Image.open(img_path)
+    img = ImageOps.grayscale(img)
+    
+    org, cut_img = cutpaste(img)
+    return org, cut_img
+
+
 """random shape
 """
-def randomShape(img):
-    result, _ = random_shapes((128, 128), max_shapes=1, shape='rectangle', intensity_range=(0, 255), 
-                       channel_axis=None, random_seed=0)
+def randomShape(img, scaleUpper=255):
+
+
+    # define random seed to change the pattern
+    rng = default_rng()
+
+    # define image size
+    width=img.shape[0]
+    height=img.shape[1]
+
+    # create random noise image
+    noise = rng.integers(0, 255, (height,width), np.uint8, True)
+
+    # blur the noise image to control the size
+    blur = cv2.GaussianBlur(noise, (0,0), sigmaX=15, sigmaY=15, borderType = cv2.BORDER_DEFAULT)
+
+    # stretch the blurred image to full dynamic range
+    stretch = skimage.exposure.rescale_intensity(blur, in_range='image', out_range=(0,255)).astype(np.uint8)
+
+    # threshold stretched image to control the size
+    thresh = cv2.threshold(stretch, 200, 255, cv2.THRESH_BINARY)[1]
+
+    # apply morphology open and close to smooth out shapes
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9,9))
+    result = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel)
+    result = cv2.morphologyEx(result, cv2.MORPH_CLOSE, kernel)
+
+    mask, start, stop = getBbox(img)
+    anomalyMask = mask * result
+    anomalyMask = np.where(anomalyMask > 0, 1, 0)
     
-    print('done')
+    addImg = np.ones_like(img)
+    scale = random.randint(0,scaleUpper)
+    
+    augImg = img * (1-anomalyMask) + addImg * anomalyMask * scale
+    return augImg.astype(np.uint8)
+    
+    
+
+    # # save result
+    # cv2.imwrite('random_blobs.png', result)
+
+    # # show results
+    # # cv2.imshow('noise', noise)
+    # cv2.imwrite('noise.png', noise)
+    # cv2.imwrite('blur.png', blur)
+    # cv2.imwrite('stretch.png', stretch)
+    # cv2.imwrite('thresh.png', thresh)
+    # cv2.imwrite('result.png', result)
+    
+    # cv2.imshow('blur', blur)
+    # cv2.imshow('stretch', stretch)
+    # cv2.imshow('thresh', thresh)
+    # cv2.imshow('result', result)
+    # cv2.waitKey(0)
+    # cv2.destroyAllWindows()
+        
     
     
     
-    
+
     
     
     
@@ -137,6 +203,9 @@ if __name__ == '__main__':
     # method = blackStrip
     method = distortion
     method = randomShape
+    
+    # method = cp
+    cutpaste = CutPasteUnion(transform=None)
     
     img_dir = '/home/zhaoxiang/mood_challenge/Sample_images/raw'
     save_dir = '/home/zhaoxiang/mood_challenge/Sample_images/{}'.format(method.__name__)
@@ -159,7 +228,12 @@ if __name__ == '__main__':
         
         if img.max() == 0:
             continue
+        """cutpaste"""
+        # org, cut_img = cp(img_path)
+        # cut_img = cut_img.save(os.path.join(save_dir, f))
         
+        
+        """other augmentations"""
         try:
             new_img, gt_mask = method(img)
             

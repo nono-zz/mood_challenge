@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 import random
 import torch.nn.functional as F
 
-from anomaly_sythesis import distortion, blackStrip
+from anomaly_sythesis import distortion, blackStrip, randomShape
 
 from cutpaste import CutPasteUnion, CutPaste3Way
 
@@ -200,21 +200,31 @@ class MVTecDataset(torch.utils.data.Dataset):
             cv2.imwrite('img_numpy.png', img_numpy)
             if img_numpy.max() == 0:
                 img_tensor = self.transform(img)
-                img_tensor = img_tensor.repeat(4, 1, 1, 1)
+                img_tensor = img_tensor.repeat(6, 1, 1, 1)
                 return img_tensor,img_tensor
             
             blackStrip_img = blackStrip(img_numpy)
-            cv2.imwrite('blackStrip.png', blackStrip_img)
+            # cv2.imwrite('blackStrip.png', blackStrip_img)
+            
+            randomShape_img = randomShape(img_numpy)
+            # cv2.imwrite('randomShape.png', randomShape_img)
+            
+            randomShapeLow_img = randomShape(img_numpy, scaleUpper=10)
+            # cv2.imwrite('randomShape.png', randomShapeLow_img)
+            
             distortion_img = distortion(np.array(img))
-            cv2.imwrite('distortion.png', distortion_img)
+            # cv2.imwrite('distortion.png', distortion_img)
             
             
             distortion_img = np.expand_dims(distortion_img, axis=2)
             blackStrip_img = np.expand_dims(blackStrip_img, axis=2)
+            randomShape_img = np.expand_dims(randomShape_img, axis=2)
+            randomShapeLow_img = np.expand_dims(randomShapeLow_img, axis=2)
             
             distortion_img = self.transform(distortion_img)
             blackStrip_img = self.transform(blackStrip_img)
-            
+            randomShape_img = self.transform(randomShape_img)
+            randomShapeLow_img = self.transform(randomShapeLow_img)
             
             """ Pixel level augmentation"""
             org, cut_img = self.cutpaste(img)
@@ -223,7 +233,7 @@ class MVTecDataset(torch.utils.data.Dataset):
             """ Gaussian Noise"""
             Gaussian_img = add_Gaussian_noise(org, self.args.noise_res, self.args.noise_std, self.args.img_size)  
 
-            img_list = [Gaussian_img, cut_img, distortion_img, blackStrip_img]
+            img_list = [Gaussian_img, cut_img, distortion_img, blackStrip_img, randomShape_img, randomShapeLow_img]
             img_list = [x.unsqueeze(dim=0) for x in img_list]
             aug_tensor = torch.cat(img_list, dim = 0)
             
