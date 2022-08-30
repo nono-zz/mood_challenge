@@ -125,3 +125,5 @@ def evaluation(args, model, test_dataloader, epoch, loss_l1, visualizer, run_nam
     pixelAP = average_precision_score(gt_list, pixel_pred_list)
     sampleAP = average_precision_score(label_list, sample_pred_list)
     print('Pixel Average Precision:{:.4f}, Sample Average Precision:{:.4f}'.format(pixelAP, sampleAP))
+    with open(result_path, 'a') as f:
+        f.writelines('Pixel Average Precision:{:.4f}, Sample Average Precision:{:.4f}'.format(pixelAP, sampleAP))
