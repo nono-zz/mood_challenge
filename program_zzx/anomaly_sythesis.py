@@ -34,7 +34,7 @@ def singleStrip(img, start, stop, mode, p = 0.3):
         # width = random.randint(0, start - stop)
         width = random.randint(0, int((stop - start) * p))
         
-        stripStart = random.randint(start, start + width)
+        stripStart = random.randint(start, stop - width)
         stripStop = stripStart + width
         
         # generate a mask
@@ -50,7 +50,7 @@ def singleStrip(img, start, stop, mode, p = 0.3):
         # width = random.randint(start, stop)
         
         width = random.randint(0, int((stop - start) * p))
-        stripStart = random.randint(start, start + width)
+        stripStart = random.randint(start, stop - width)
         stripStop = stripStart + width
         
         # generate a mask
